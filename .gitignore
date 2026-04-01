@@ -1,1 +1,10 @@
 node_modules
+dist/
+
+# Secrets and local env (never commit real tokens)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.credentials.json

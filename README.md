@@ -40,6 +40,7 @@ This fork now includes a local multi-provider model gateway for using non-Anthro
 - User-defined providers and models can be added through settings or directly from `/model`, with Anthropic-compatible or OpenAI-compatible upstream APIs.
 - External models run through a local Anthropic-compatible adapter, so the existing QueryEngine and tool loop keep working.
 - A reproducible smoke-test is included: `bun run test:model-gateway`
+- The `dist/` build output is not committed (avoids huge diffs and false GitHub secret alerts on bundled third-party constants such as the VS Code OAuth client id).
 
 ### Quick Start
 
