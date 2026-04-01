@@ -467,6 +467,17 @@ export function getAssistantMessageFromError(
     error.status === 429 &&
     shouldProcessRateLimits(isClaudeAISubscriber())
   ) {
+    if (
+      model.startsWith('ext:') &&
+      error.message.includes('"type":"FreeUsageLimitError"')
+    ) {
+      const switchCmd = getIsNonInteractiveSession() ? '--model' : '/model'
+      return createAssistantAPIErrorMessage({
+        content: `The selected free model is temporarily rate limited by its upstream provider. Use ${switchCmd} to switch to another free model and try again.`,
+        error: 'rate_limit',
+      })
+    }
+
     // Check if this is the new API with multiple rate limit headers
     const rateLimitType = error.headers?.get?.(
       'anthropic-ratelimit-unified-representative-claim',

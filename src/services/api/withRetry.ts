@@ -97,6 +97,19 @@ const PERSISTENT_MAX_BACKOFF_MS = 5 * 60 * 1000
 const PERSISTENT_RESET_CAP_MS = 6 * 60 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
 
+function isGatewayModel(model: string): boolean {
+  return model.startsWith('ext:')
+}
+
+function isGatewayFreeUsageLimitError(error: unknown, model: string): boolean {
+  return (
+    isGatewayModel(model) &&
+    error instanceof APIError &&
+    error.status === 429 &&
+    error.message.includes('"type":"FreeUsageLimitError"')
+  )
+}
+
 function isPersistentRetryEnabled(): boolean {
   return feature('UNATTENDED_RETRY')
     ? isEnvTruthy(process.env.CLAUDE_CODE_UNATTENDED_RETRY)
@@ -320,6 +333,12 @@ export async function* withRetry<T>(
           query_source:
             options.querySource as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         })
+        throw new CannotRetryError(error, retryContext)
+      }
+
+      // External free-model gateways often return provider-side public quota
+      // errors. Retrying the exact same model just burns time in the TUI.
+      if (isGatewayFreeUsageLimitError(error, retryContext.model)) {
         throw new CannotRetryError(error, retryContext)
       }
 

@@ -36,6 +36,122 @@ export const EnvironmentVariablesSchema = lazySchema(() =>
   z.record(z.string(), z.coerce.string()),
 )
 
+export const GatewayProviderConfigSchema = lazySchema(() =>
+  z.object({
+    type: z
+      .enum(['anthropic', 'openai-chat'])
+      .describe('Backend protocol expected by the provider'),
+    name: z
+      .string()
+      .optional()
+      .describe('Display name used in the model picker'),
+    baseURL: z
+      .string()
+      .describe('Base URL without the final /messages or /chat/completions suffix'),
+    apiKey: z
+      .string()
+      .optional()
+      .describe('Inline API key. Prefer apiKeyEnv for long-lived credentials.'),
+    apiKeyEnv: z
+      .string()
+      .optional()
+      .describe('Environment variable name that stores the provider API key'),
+    headers: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('Static headers sent to the upstream provider'),
+    body: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Static JSON body fields merged into every upstream request'),
+    timeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Optional request timeout override for this provider'),
+    enableStreaming: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether streaming should be attempted for this provider when supported by the backend adapter',
+      ),
+  }),
+)
+
+export const GatewayModelConfigSchema = lazySchema(() =>
+  z.object({
+    id: z.string().describe('Opaque model id shown to the user'),
+    presetId: z
+      .string()
+      .optional()
+      .describe('Original provider preset id used to render the custom model editor'),
+    name: z
+      .string()
+      .optional()
+      .describe('Optional display name shown in the model picker'),
+    description: z
+      .string()
+      .optional()
+      .describe('Optional description shown in the model picker'),
+    provider: z
+      .string()
+      .describe('Provider id from gatewayProviders used to route this model'),
+    backend: z
+      .enum(['anthropic', 'openai-chat'])
+      .optional()
+      .describe('Override the provider protocol for this single model'),
+    model: z
+      .string()
+      .optional()
+      .describe('Actual upstream model id if it differs from id'),
+    free: z
+      .boolean()
+      .optional()
+      .describe('Whether this model should appear in the Free tab'),
+    contextWindow: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Context window size used by Claude Code budgeting for this model'),
+    maxOutputTokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Preferred max output token limit for this model'),
+    temperature: z
+      .number()
+      .min(0)
+      .max(2)
+      .optional()
+      .describe('Default temperature to send to the upstream provider'),
+    effortLevel: z
+      .enum(['low', 'medium', 'high', 'max'])
+      .optional()
+      .describe('Preferred reasoning effort when this model is selected'),
+    timeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Optional request timeout override for this specific model'),
+    enableStreaming: z
+      .boolean()
+      .optional()
+      .describe('Whether this model should allow streaming when the adapter supports it'),
+    headers: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('Static headers merged into requests for this model'),
+    body: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Static JSON body fields merged into requests for this model'),
+  }),
+)
+
 /**
  * Schema for permissions section
  */
@@ -395,6 +511,20 @@ export const SettingsSchema = lazySchema(() =>
           'Override mapping from Anthropic model ID (e.g. "claude-opus-4-6") to provider-specific ' +
             'model ID (e.g. a Bedrock inference profile ARN). Typically set in managed settings by ' +
             'enterprise administrators.',
+        ),
+      gatewayProviders: z
+        .record(z.string(), GatewayProviderConfigSchema())
+        .optional()
+        .describe(
+          'Custom external providers exposed through the local model gateway. ' +
+            'These providers are used for user-defined models in gatewayModels.',
+        ),
+      gatewayModels: z
+        .array(GatewayModelConfigSchema())
+        .optional()
+        .describe(
+          'Custom models shown in the model picker. Each model references a provider ' +
+            'from gatewayProviders and can target Anthropic-compatible or OpenAI-compatible APIs.',
         ),
       // Whether to automatically approve all MCP servers in the project
       enableAllProjectMcpServers: z

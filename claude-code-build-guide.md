@@ -233,6 +233,8 @@ class SandboxManager {
   static cleanupAfterCommand() {}
 }
 class SandboxViolationStore {
+  subscribe(listener) { listener(this.getViolations()); return () => {}; }
+  getTotalCount() { return this.getViolations().length; }
   getViolations() { return []; }
   clear() {}
 }

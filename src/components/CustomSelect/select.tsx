@@ -150,6 +150,15 @@ export type SelectProps<T> = {
   readonly inlineDescriptions?: boolean;
 
   /**
+   * When false, keep focus indication on the pointer/cursor only and do not
+   * tint the focused row text. Useful when focus and selection should remain
+   * visually distinct.
+   *
+   * @default true
+   */
+  readonly highlightFocusedText?: boolean;
+
+  /**
    * Callback when user presses up from the first item.
    * If provided, navigation will not wrap to the last item.
    */
@@ -166,6 +175,11 @@ export type SelectProps<T> = {
    * Called when Tab is pressed (to enter or exit input mode).
    */
   readonly onInputModeToggle?: (value: T) => void;
+
+  /**
+   * Callback when Tab should be handled by the parent instead of the select.
+   */
+  readonly onTab?: (shift: boolean) => void;
 
   /**
    * Callback to open external editor for editing input option values.
@@ -190,7 +204,7 @@ export type SelectProps<T> = {
   readonly onRemoveImage?: (id: number) => void;
 };
 export function Select(t0) {
-  const $ = _c(72);
+  const $ = _c(74);
   const {
     isDisabled: t1,
     hideIndexes: t2,
@@ -205,9 +219,11 @@ export function Select(t0) {
     layout: t4,
     disableSelection: t5,
     inlineDescriptions: t6,
+    highlightFocusedText: t6_0,
     onUpFromFirstItem,
     onDownFromLastItem,
     onInputModeToggle,
+    onTab,
     onOpenEditor,
     onImagePaste,
     pastedContents,
@@ -219,6 +235,7 @@ export function Select(t0) {
   const layout = t4 === undefined ? "compact" : t4;
   const disableSelection = t5 === undefined ? false : t5;
   const inlineDescriptions = t6 === undefined ? false : t6;
+  const highlightFocusedText = t6_0 === undefined ? true : t6_0;
   const [imagesSelected, setImagesSelected] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   let t7;
@@ -317,7 +334,7 @@ export function Select(t0) {
     t13 = $[16];
   }
   let t14;
-  if ($[17] !== imagesSelected || $[18] !== inputValues || $[19] !== isDisabled || $[20] !== onDownFromLastItem || $[21] !== onInputModeToggle || $[22] !== onUpFromFirstItem || $[23] !== options || $[24] !== state || $[25] !== t12 || $[26] !== t13) {
+  if ($[17] !== imagesSelected || $[18] !== inputValues || $[19] !== isDisabled || $[20] !== onDownFromLastItem || $[21] !== onInputModeToggle || $[22] !== onTab || $[23] !== onUpFromFirstItem || $[24] !== options || $[25] !== state || $[26] !== t12 || $[27] !== t13) {
     t14 = {
       isDisabled,
       disableSelection: t12,
@@ -327,6 +344,7 @@ export function Select(t0) {
       onUpFromFirstItem,
       onDownFromLastItem,
       onInputModeToggle,
+      onTab,
       inputValues,
       imagesSelected,
       onEnterImageSelection: t13
@@ -336,21 +354,22 @@ export function Select(t0) {
     $[19] = isDisabled;
     $[20] = onDownFromLastItem;
     $[21] = onInputModeToggle;
-    $[22] = onUpFromFirstItem;
-    $[23] = options;
-    $[24] = state;
-    $[25] = t12;
-    $[26] = t13;
-    $[27] = t14;
+    $[22] = onTab;
+    $[23] = onUpFromFirstItem;
+    $[24] = options;
+    $[25] = state;
+    $[26] = t12;
+    $[27] = t13;
+    $[28] = t14;
   } else {
-    t14 = $[27];
+    t14 = $[28];
   }
   useSelectInput(t14);
   let T0;
   let t15;
   let t16;
   let t17;
-  if ($[28] !== hideIndexes || $[29] !== highlightText || $[30] !== imagesSelected || $[31] !== inlineDescriptions || $[32] !== inputValues || $[33] !== isDisabled || $[34] !== layout || $[35] !== onCancel || $[36] !== onChange || $[37] !== onImagePaste || $[38] !== onOpenEditor || $[39] !== onRemoveImage || $[40] !== options.length || $[41] !== pastedContents || $[42] !== selectedImageIndex || $[43] !== state.focusedValue || $[44] !== state.options || $[45] !== state.value || $[46] !== state.visibleFromIndex || $[47] !== state.visibleOptions || $[48] !== state.visibleToIndex) {
+  if ($[29] !== hideIndexes || $[30] !== highlightFocusedText || $[31] !== highlightText || $[32] !== imagesSelected || $[33] !== inlineDescriptions || $[34] !== inputValues || $[35] !== isDisabled || $[36] !== layout || $[37] !== onCancel || $[38] !== onChange || $[39] !== onImagePaste || $[40] !== onOpenEditor || $[41] !== onRemoveImage || $[42] !== options.length || $[43] !== pastedContents || $[44] !== selectedImageIndex || $[45] !== state.focusedValue || $[46] !== state.options || $[47] !== state.value || $[48] !== state.visibleFromIndex || $[49] !== state.visibleOptions || $[50] !== state.visibleToIndex) {
     t17 = Symbol.for("react.early_return_sentinel");
     bb0: {
       const styles = {
@@ -399,7 +418,13 @@ export function Select(t0) {
               label = <>{labelText.slice(0, index_0)}<Text {...styles.highlightedText()}>{highlightText}</Text>{labelText.slice(index_0 + highlightText.length)}</>;
             }
             const isOptionDisabled = option_1.disabled === true;
-            const optionColor = isOptionDisabled ? undefined : isSelected ? "success" : isFocused ? "suggestion" : undefined;
+            const optionColor = isOptionDisabled
+              ? undefined
+              : isSelected
+                ? "success"
+                : isFocused && highlightFocusedText
+                  ? "suggestion"
+                  : undefined;
             return <Box key={String(option_1.value)} flexDirection="column" flexShrink={0}><SelectOption isFocused={isFocused} isSelected={isSelected} shouldShowDownArrow={areMoreOptionsBelow && isLastVisibleOption} shouldShowUpArrow={areMoreOptionsAbove && isFirstVisibleOption}><Text dimColor={isOptionDisabled} color={optionColor}>{label}</Text></SelectOption>{option_1.description && <Box paddingLeft={2}><Text dimColor={isOptionDisabled || option_1.dimDescription !== false} color={optionColor}><Ansi>{option_1.description}</Ansi></Text></Box>}<Text> </Text></Box>;
           })}</Box>;
         break bb0;
@@ -447,7 +472,7 @@ export function Select(t0) {
               label_0 = <>{labelText_0.slice(0, index_2)}<Text {...styles.highlightedText()}>{highlightText}</Text>{labelText_0.slice(index_2 + highlightText.length)}</>;
             }
             const isOptionDisabled_0 = option_2.disabled === true;
-            return <Box key={String(option_2.value)} flexDirection="column" flexShrink={0}><SelectOption isFocused={isFocused_0} isSelected={isSelected_0} shouldShowDownArrow={areMoreOptionsBelow_0 && isLastVisibleOption_0} shouldShowUpArrow={areMoreOptionsAbove_0 && isFirstVisibleOption_0}><>{!hideIndexes && <Text dimColor={true}>{`${i_0}.`.padEnd(maxIndexWidth_0 + 1)}</Text>}<Text dimColor={isOptionDisabled_0} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}>{label_0}</Text></></SelectOption>{option_2.description && <Box paddingLeft={hideIndexes ? 4 : maxIndexWidth_0 + 4}><Text dimColor={isOptionDisabled_0 || option_2.dimDescription !== false} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}><Ansi>{option_2.description}</Ansi></Text></Box>}</Box>;
+            return <Box key={String(option_2.value)} flexDirection="column" flexShrink={0}><SelectOption isFocused={isFocused_0} isSelected={isSelected_0} shouldShowDownArrow={areMoreOptionsBelow_0 && isLastVisibleOption_0} shouldShowUpArrow={areMoreOptionsAbove_0 && isFirstVisibleOption_0}><>{!hideIndexes && <Text dimColor={true}>{`${i_0}.`.padEnd(maxIndexWidth_0 + 1)}</Text>}<Text dimColor={isOptionDisabled_0} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 && highlightFocusedText ? "suggestion" : undefined}>{label_0}</Text></></SelectOption>{option_2.description && <Box paddingLeft={hideIndexes ? 4 : maxIndexWidth_0 + 4}><Text dimColor={isOptionDisabled_0 || option_2.dimDescription !== false} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 && highlightFocusedText ? "suggestion" : undefined}><Ansi>{option_2.description}</Ansi></Text></Box>}</Box>;
           })}</Box>;
         break bb0;
       }
@@ -519,7 +544,7 @@ export function Select(t0) {
             const checkmarkWidth_0 = data_0.isSelected ? 2 : 0;
             const currentLabelWidth = 2 + indexWidth_0 + stringWidth(labelText_3) + checkmarkWidth_0;
             const padding = maxLabelWidth - currentLabelWidth;
-            return <TwoColumnRow key={String(data_0.option.value)} isFocused={data_0.isFocused}><Box flexDirection="row" flexShrink={0}>{data_0.isFocused ? <Text color="suggestion">{figures.pointer}</Text> : data_0.shouldShowDownArrow ? <Text dimColor={true}>{figures.arrowDown}</Text> : data_0.shouldShowUpArrow ? <Text dimColor={true}>{figures.arrowUp}</Text> : <Text> </Text>}<Text> </Text><Text dimColor={data_0.isOptionDisabled} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}>{!hideIndexes && <Text dimColor={true}>{`${data_0.index}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}{data_0.label}</Text>{data_0.isSelected && <Text color="success"> {figures.tick}</Text>}{padding > 0 && <Text>{" ".repeat(padding)}</Text>}</Box><Box flexGrow={1} marginLeft={2}><Text wrap="wrap" dimColor={data_0.isOptionDisabled || data_0.option.dimDescription !== false} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}><Ansi>{data_0.option.description || " "}</Ansi></Text></Box></TwoColumnRow>;
+            return <TwoColumnRow key={String(data_0.option.value)} isFocused={data_0.isFocused}><Box flexDirection="row" flexShrink={0}>{data_0.isFocused ? <Text color="suggestion">{figures.pointer}</Text> : data_0.shouldShowDownArrow ? <Text dimColor={true}>{figures.arrowDown}</Text> : data_0.shouldShowUpArrow ? <Text dimColor={true}>{figures.arrowUp}</Text> : <Text> </Text>}<Text> </Text><Text dimColor={data_0.isOptionDisabled} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused && highlightFocusedText ? "suggestion" : undefined}>{!hideIndexes && <Text dimColor={true}>{`${data_0.index}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}{data_0.label}</Text>{data_0.isSelected && <Text color="success"> {figures.tick}</Text>}{padding > 0 && <Text>{" ".repeat(padding)}</Text>}</Box><Box flexGrow={1} marginLeft={2}><Text wrap="wrap" dimColor={data_0.isOptionDisabled || data_0.option.dimDescription !== false} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused && highlightFocusedText ? "suggestion" : undefined}><Ansi>{data_0.option.description || " "}</Ansi></Text></Box></TwoColumnRow>;
           };
           $[64] = hideIndexes;
           $[65] = maxIndexWidth_1;
@@ -572,52 +597,54 @@ export function Select(t0) {
         const isFocused_3 = !isDisabled && state.focusedValue === option_4.value;
         const isSelected_3 = state.value === option_4.value;
         const isOptionDisabled_2 = option_4.disabled === true;
-        return <SelectOption key={String(option_4.value)} isFocused={isFocused_3} isSelected={isSelected_3} shouldShowDownArrow={areMoreOptionsBelow_3 && isLastVisibleOption_3} shouldShowUpArrow={areMoreOptionsAbove_3 && isFirstVisibleOption_3}><Box flexDirection="row" flexShrink={0}>{!hideIndexes && <Text dimColor={true}>{`${i_3}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}<Text dimColor={isOptionDisabled_2} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}>{label_2}{inlineDescriptions && option_4.description && <Text dimColor={isOptionDisabled_2 || option_4.dimDescription !== false}>{" "}{option_4.description}</Text>}</Text></Box>{!inlineDescriptions && option_4.description && <Box flexShrink={99} marginLeft={2}><Text wrap="wrap-trim" dimColor={isOptionDisabled_2 || option_4.dimDescription !== false} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}><Ansi>{option_4.description}</Ansi></Text></Box>}</SelectOption>;
+        return <SelectOption key={String(option_4.value)} isFocused={isFocused_3} isSelected={isSelected_3} shouldShowDownArrow={areMoreOptionsBelow_3 && isLastVisibleOption_3} shouldShowUpArrow={areMoreOptionsAbove_3 && isFirstVisibleOption_3}><Box flexDirection="row" flexShrink={0}>{!hideIndexes && <Text dimColor={true}>{`${i_3}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}<Text dimColor={isOptionDisabled_2} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 && highlightFocusedText ? "suggestion" : undefined}>{label_2}{inlineDescriptions && option_4.description && <Text dimColor={isOptionDisabled_2 || option_4.dimDescription !== false}>{" "}{option_4.description}</Text>}</Text></Box>{!inlineDescriptions && option_4.description && <Box flexShrink={99} marginLeft={2}><Text wrap="wrap-trim" dimColor={isOptionDisabled_2 || option_4.dimDescription !== false} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 && highlightFocusedText ? "suggestion" : undefined}><Ansi>{option_4.description}</Ansi></Text></Box>}</SelectOption>;
       });
     }
     $[28] = hideIndexes;
-    $[29] = highlightText;
-    $[30] = imagesSelected;
-    $[31] = inlineDescriptions;
-    $[32] = inputValues;
-    $[33] = isDisabled;
-    $[34] = layout;
-    $[35] = onCancel;
-    $[36] = onChange;
-    $[37] = onImagePaste;
-    $[38] = onOpenEditor;
-    $[39] = onRemoveImage;
-    $[40] = options.length;
-    $[41] = pastedContents;
-    $[42] = selectedImageIndex;
-    $[43] = state.focusedValue;
-    $[44] = state.options;
-    $[45] = state.value;
-    $[46] = state.visibleFromIndex;
-    $[47] = state.visibleOptions;
-    $[48] = state.visibleToIndex;
-    $[49] = T0;
-    $[50] = t15;
-    $[51] = t16;
-    $[52] = t17;
+    $[29] = hideIndexes;
+    $[30] = highlightFocusedText;
+    $[31] = highlightText;
+    $[32] = imagesSelected;
+    $[33] = inlineDescriptions;
+    $[34] = inputValues;
+    $[35] = isDisabled;
+    $[36] = layout;
+    $[37] = onCancel;
+    $[38] = onChange;
+    $[39] = onImagePaste;
+    $[40] = onOpenEditor;
+    $[41] = onRemoveImage;
+    $[42] = options.length;
+    $[43] = pastedContents;
+    $[44] = selectedImageIndex;
+    $[45] = state.focusedValue;
+    $[46] = state.options;
+    $[47] = state.value;
+    $[48] = state.visibleFromIndex;
+    $[49] = state.visibleOptions;
+    $[50] = state.visibleToIndex;
+    $[51] = T0;
+    $[52] = t15;
+    $[53] = t16;
+    $[54] = t17;
   } else {
-    T0 = $[49];
-    t15 = $[50];
-    t16 = $[51];
-    t17 = $[52];
+    T0 = $[51];
+    t15 = $[52];
+    t16 = $[53];
+    t17 = $[54];
   }
   if (t17 !== Symbol.for("react.early_return_sentinel")) {
     return t17;
   }
   let t18;
-  if ($[68] !== T0 || $[69] !== t15 || $[70] !== t16) {
+  if ($[70] !== T0 || $[71] !== t15 || $[72] !== t16) {
     t18 = <T0 {...t15}>{t16}</T0>;
-    $[68] = T0;
-    $[69] = t15;
-    $[70] = t16;
-    $[71] = t18;
+    $[70] = T0;
+    $[71] = t15;
+    $[72] = t16;
+    $[73] = t18;
   } else {
-    t18 = $[71];
+    t18 = $[73];
   }
   return t18;
 }

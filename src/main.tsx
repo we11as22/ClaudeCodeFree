@@ -37,6 +37,7 @@ import { hasGrowthBookEnvOverride, initializeGrowthBook, refreshGrowthBookAfterA
 import { fetchBootstrapData } from './services/api/bootstrap.js';
 import { type DownloadResult, downloadSessionFiles, type FilesApiConfig, parseFileSpecs } from './services/api/filesApi.js';
 import { prefetchPassesEligibility } from './services/api/referral.js';
+import { refreshGatewayModelOptions } from './services/modelGateway/catalog.js';
 import { prefetchOfficialMcpUrls } from './services/mcp/officialRegistry.js';
 import type { McpSdkServerConfig, McpServerConfig, ScopedMcpServerConfig } from './services/mcp/types.js';
 import { isPolicyAllowed, loadPolicyLimits, refreshPolicyLimits, waitForPolicyLimitsToLoad } from './services/policyLimits/index.js';
@@ -2108,6 +2109,7 @@ async function run(): Promise<CommanderCommand> {
     if (!effectiveModel && mainThreadAgentDefinition?.model && mainThreadAgentDefinition.model !== 'inherit') {
       effectiveModel = parseUserSpecifiedModel(mainThreadAgentDefinition.model);
     }
+    const effectiveFallbackModel = userSpecifiedFallbackModel ?? (effectiveModel?.startsWith('ext:') && effectiveModel !== 'ext:kilo:kilo-auto/free' ? 'ext:kilo:kilo-auto/free' : undefined);
     setMainLoopModelOverride(effectiveModel);
 
     // Compute resolved model for hooks (use user-specified model at launch)
@@ -2351,6 +2353,7 @@ async function run(): Promise<CommanderCommand> {
 
       // Fetch bootstrap data from the server and update all cache values.
       void fetchBootstrapData();
+      void refreshGatewayModelOptions();
 
       // TODO: Consolidate other prefetches into a single bootstrap request.
       void prefetchPassesEligibility();
@@ -2843,7 +2846,7 @@ async function run(): Promise<CommanderCommand> {
         systemPrompt,
         appendSystemPrompt,
         userSpecifiedModel: effectiveModel,
-        fallbackModel: userSpecifiedFallbackModel,
+        fallbackModel: effectiveFallbackModel,
         teleport,
         sdkUrl,
         replayUserMessages: effectiveReplayUserMessages,
@@ -2928,7 +2931,7 @@ async function run(): Promise<CommanderCommand> {
       tasks: {},
       agentNameRegistry: new Map(),
       verbose: verbose ?? getGlobalConfig().verbose ?? false,
-      mainLoopModel: initialMainLoopModel,
+      mainLoopModel: effectiveModel ?? initialMainLoopModel,
       mainLoopModelForSession: null,
       isBriefOnly: initialIsBriefOnly,
       expandedView: getGlobalConfig().showSpinnerTree ? 'teammates' : getGlobalConfig().showExpandedTodos ? 'tasks' : 'none',

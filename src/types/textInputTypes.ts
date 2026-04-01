@@ -173,6 +173,11 @@ export type BaseTextInputProps = {
   readonly onUndo?: () => void
 
   /**
+   * Optional callback when Tab is pressed.
+   */
+  readonly onTab?: (shift: boolean) => void
+
+  /**
    * Whether to render the text with dim color
    */
   readonly dimColor?: boolean

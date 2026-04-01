@@ -28,6 +28,11 @@ import {
   getVertexRegionForModel,
   isEnvTruthy,
 } from '../../utils/envUtils.js'
+import {
+  getGatewayModelMetadata,
+  isGatewayModel,
+} from '../modelGateway/catalog.js'
+import { ensureModelGatewayServer } from '../modelGateway/server.js'
 
 /**
  * Environment variables for different client types:
@@ -98,6 +103,34 @@ export async function getAnthropicClient({
   fetchOverride?: ClientOptions['fetch']
   source?: string
 }): Promise<Anthropic> {
+  if (model && isGatewayModel(model)) {
+    const gatewayBaseURL = await ensureModelGatewayServer()
+    const metadata = getGatewayModelMetadata(model)
+    const gatewayHeaders = metadata?.headers ?? {}
+    const gatewayConfig: ConstructorParameters<typeof Anthropic>[0] = {
+      apiKey: 'external-model-gateway',
+      baseURL: gatewayBaseURL,
+      defaultHeaders: {
+        'x-app': 'cli',
+        'User-Agent': getUserAgent(),
+        'X-Claude-Code-Session-Id': getSessionId(),
+        ...getCustomHeaders(),
+        ...gatewayHeaders,
+      },
+      maxRetries,
+      timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+      dangerouslyAllowBrowser: true,
+      fetchOptions: getProxyFetchOptions({
+        forAnthropicAPI: true,
+      }) as ClientOptions['fetchOptions'],
+      ...(buildFetch(fetchOverride, source) && {
+        fetch: buildFetch(fetchOverride, source),
+      }),
+      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+    }
+    return new Anthropic(gatewayConfig)
+  }
+
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
   const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP

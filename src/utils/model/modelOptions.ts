@@ -32,6 +32,8 @@ import {
 } from './model.js'
 import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
+import { getGatewayModelOptions } from '../../services/modelGateway/catalog.js'
+import type { GatewayModelMetadata } from '../../services/modelGateway/types.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -40,6 +42,10 @@ export type ModelOption = {
   label: string
   description: string
   descriptionForModel?: string
+  source?: 'builtin' | 'kilo' | 'opencode' | 'custom'
+  providerId?: string
+  isFree?: boolean
+  gateway?: GatewayModelMetadata
 }
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
@@ -478,6 +484,12 @@ export function getModelOptions(fastMode = false): ModelOption[] {
 
   // Append additional model options fetched during bootstrap
   for (const opt of getGlobalConfig().additionalModelOptionsCache ?? []) {
+    if (!options.some(existing => existing.value === opt.value)) {
+      options.push(opt)
+    }
+  }
+
+  for (const opt of getGatewayModelOptions()) {
     if (!options.some(existing => existing.value === opt.value)) {
       options.push(opt)
     }

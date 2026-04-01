@@ -17,6 +17,7 @@ import { useTerminalSize } from './useTerminalSize.js'
 type UseSearchInputOptions = {
   isActive: boolean
   onExit: () => void
+  onTab?: (shift: boolean) => void
   /** Esc + Ctrl+C abandon (distinct from onExit = Enter commit). When
    *  provided: single-Esc calls this directly (no clear-first-then-exit
    *  two-press). When absent: current behavior — Esc clears non-empty
@@ -84,6 +85,7 @@ const UNHANDLED_SPECIAL_KEYS = new Set([
 export function useSearchInput({
   isActive,
   onExit,
+  onTab,
   onCancel,
   onExitUp,
   columns,
@@ -333,8 +335,10 @@ export function useSearchInput({
       return
     }
 
-    // Tab: ignore
+    // Tab: hand off to parent navigation (e.g. tab switching)
     if (e.key === 'tab') {
+      e.preventDefault()
+      onTab?.(e.shift)
       return
     }
 

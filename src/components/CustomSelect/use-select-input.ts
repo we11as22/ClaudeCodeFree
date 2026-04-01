@@ -81,6 +81,11 @@ export type UseSelectProps<T> = {
    * Returns true if image selection was entered (images exist), false otherwise.
    */
   onEnterImageSelection?: () => boolean
+
+  /**
+   * Callback for tab navigation owned by the parent container.
+   */
+  onTab?: (shift: boolean) => void
 }
 
 export const useSelectInput = <T>({
@@ -92,6 +97,7 @@ export const useSelectInput = <T>({
   onUpFromFirstItem,
   onDownFromLastItem,
   onInputModeToggle,
+  onTab,
   inputValues,
   imagesSelected = false,
   onEnterImageSelection,
@@ -177,6 +183,13 @@ export const useSelectInput = <T>({
         opt => opt.value === state.focusedValue,
       )
       const currentIsInInput = focusedOption?.type === 'input'
+
+      if (key.tab && onTab) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        onTab(key.shift)
+        return
+      }
 
       // Handle Tab key for input mode toggling
       if (key.tab && onInputModeToggle && state.focusedValue !== undefined) {

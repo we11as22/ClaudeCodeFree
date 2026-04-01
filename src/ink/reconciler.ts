@@ -1,8 +1,5 @@
 /* eslint-disable custom-rules/no-top-level-side-effects */
-
-import { appendFileSync } from 'fs'
 import createReconciler from 'react-reconciler'
-import { getYogaCounters } from 'src/native-ts/yoga-layout/index.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import {
   appendChildNode,
@@ -186,17 +183,6 @@ export function isDebugRepaintsEnabled(): boolean {
 
 export const dispatcher = new Dispatcher()
 
-// --- COMMIT INSTRUMENTATION (temp debugging) ---
-// eslint-disable-next-line custom-rules/no-process-env-top-level -- debug instrumentation, read-once is fine
-const COMMIT_LOG = process.env.CLAUDE_CODE_COMMIT_LOG
-let _commits = 0
-let _lastLog = 0
-let _lastCommitAt = 0
-let _maxGapMs = 0
-let _createCount = 0
-let _prepareAt = 0
-// --- END ---
-
 // --- SCROLL PROFILING (bench/scroll-e2e.sh reads via getLastYogaMs) ---
 // Set by onComputeLayout wrapper in ink.tsx; read by onRender for phases.
 let _lastYogaMs = 0
@@ -238,55 +224,14 @@ const reconciler = createReconciler<
   null
 >({
   getRootHostContext: () => ({ isInsideText: false }),
-  prepareForCommit: () => {
-    if (COMMIT_LOG) _prepareAt = performance.now()
-    return null
-  },
+  prepareForCommit: () => null,
   preparePortalMount: () => null,
   clearContainer: () => false,
   resetAfterCommit(rootNode) {
     _lastCommitMs = _commitStart > 0 ? performance.now() - _commitStart : 0
     _commitStart = 0
-    if (COMMIT_LOG) {
-      const now = performance.now()
-      _commits++
-      const gap = _lastCommitAt > 0 ? now - _lastCommitAt : 0
-      if (gap > _maxGapMs) _maxGapMs = gap
-      _lastCommitAt = now
-      const reconcileMs = _prepareAt > 0 ? now - _prepareAt : 0
-      if (gap > 30 || reconcileMs > 20 || _createCount > 50) {
-        // eslint-disable-next-line custom-rules/no-sync-fs -- debug instrumentation
-        appendFileSync(
-          COMMIT_LOG,
-          `${now.toFixed(1)} gap=${gap.toFixed(1)}ms reconcile=${reconcileMs.toFixed(1)}ms creates=${_createCount}\n`,
-        )
-      }
-      _createCount = 0
-      if (now - _lastLog > 1000) {
-        // eslint-disable-next-line custom-rules/no-sync-fs -- debug instrumentation
-        appendFileSync(
-          COMMIT_LOG,
-          `${now.toFixed(1)} commits=${_commits}/s maxGap=${_maxGapMs.toFixed(1)}ms\n`,
-        )
-        _commits = 0
-        _maxGapMs = 0
-        _lastLog = now
-      }
-    }
-    const _t0 = COMMIT_LOG ? performance.now() : 0
     if (typeof rootNode.onComputeLayout === 'function') {
       rootNode.onComputeLayout()
-    }
-    if (COMMIT_LOG) {
-      const layoutMs = performance.now() - _t0
-      if (layoutMs > 20) {
-        const c = getYogaCounters()
-        // eslint-disable-next-line custom-rules/no-sync-fs -- debug instrumentation
-        appendFileSync(
-          COMMIT_LOG,
-          `${_t0.toFixed(1)} SLOW_YOGA ${layoutMs.toFixed(1)}ms visited=${c.visited} measured=${c.measured} hits=${c.cacheHits} live=${c.live}\n`,
-        )
-      }
     }
 
     if (process.env.NODE_ENV === 'test') {
@@ -300,18 +245,7 @@ const reconciler = createReconciler<
       return
     }
 
-    const _tr = COMMIT_LOG ? performance.now() : 0
     rootNode.onRender?.()
-    if (COMMIT_LOG) {
-      const renderMs = performance.now() - _tr
-      if (renderMs > 10) {
-        // eslint-disable-next-line custom-rules/no-sync-fs -- debug instrumentation
-        appendFileSync(
-          COMMIT_LOG,
-          `${_tr.toFixed(1)} SLOW_PAINT ${renderMs.toFixed(1)}ms\n`,
-        )
-      }
-    }
   },
   getChildHostContext(
     parentHostContext: HostContext,
@@ -345,7 +279,6 @@ const reconciler = createReconciler<
         : originalType
 
     const node = createNode(type)
-    if (COMMIT_LOG) _createCount++
 
     for (const [key, value] of Object.entries(newProps)) {
       applyProp(node, key, value)

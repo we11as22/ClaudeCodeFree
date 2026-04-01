@@ -2681,7 +2681,7 @@ export function REPL({
     // useDeferredHookMessages) and attachment messages (appended by
     // processTextPrompt) — both pushed length past 1 on turn one, so the
     // title silently fell through to the "Claude Code" default.
-    if (!titleDisabled && !sessionTitle && !agentTitle && !haikuTitleAttemptedRef.current) {
+    if (!titleDisabled && !sessionTitle && !agentTitle && !haikuTitleAttemptedRef.current && !mainLoopModelParam.startsWith('ext:')) {
       const firstUserMessage = newMessages.find(m => m.type === 'user' && !m.isMeta);
       const text = firstUserMessage?.type === 'user' ? getContentText(firstUserMessage.message.content) : null;
       // Skip synthetic breadcrumbs — slash-command output, prompt-skill
@@ -2916,6 +2916,9 @@ export function REPL({
         }
       }
       await onQueryImpl(latestMessages, newMessages, abortController, shouldQuery, additionalAllowedTools, mainLoopModelParam, effort);
+    } catch (error) {
+      logError(error);
+      setMessages(prev => [...prev, createSystemMessage(`Request failed: ${errorMessage(error)}`, 'warning')]);
     } finally {
       // queryGuard.end() atomically checks generation and transitions
       // running→idle. Returns false if a newer query owns the guard

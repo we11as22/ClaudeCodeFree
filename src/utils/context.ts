@@ -1,5 +1,6 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { CONTEXT_1M_BETA_HEADER } from '../constants/betas.js'
+import { getGatewayModelMetadata } from '../services/modelGateway/catalog.js'
 import { getGlobalConfig } from './config.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
@@ -52,6 +53,11 @@ export function getContextWindowForModel(
   model: string,
   betas?: string[],
 ): number {
+  const gatewayMetadata = getGatewayModelMetadata(model)
+  if (gatewayMetadata?.contextWindow && gatewayMetadata.contextWindow > 0) {
+    return gatewayMetadata.contextWindow
+  }
+
   // Allow override via environment variable (ant-only)
   // This takes precedence over all other context window resolution, including 1M detection,
   // so users can cap the effective context window for local decisions (auto-compact, etc.)
@@ -150,6 +156,14 @@ export function getModelMaxOutputTokens(model: string): {
   default: number
   upperLimit: number
 } {
+  const gatewayMetadata = getGatewayModelMetadata(model)
+  if (gatewayMetadata?.maxOutputTokens && gatewayMetadata.maxOutputTokens > 0) {
+    return {
+      default: gatewayMetadata.maxOutputTokens,
+      upperLimit: gatewayMetadata.maxOutputTokens,
+    }
+  }
+
   let defaultTokens: number
   let upperLimit: number
 

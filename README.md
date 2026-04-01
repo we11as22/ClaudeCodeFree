@@ -30,6 +30,80 @@ This repository contains the leaked `src/` directory.
 
 ---
 
+## Added In This Fork
+
+This fork now includes a local multi-provider model gateway for using non-Anthropic models from the existing Claude Code UI and tool loop.
+
+- Free models from Kilo and OpenCode are merged into the model catalog.
+- The model picker now separates models into `Claude`, `Free`, and `Custom` tabs.
+- `Free` now has a dedicated filter box above the model list, and `Custom` uses a short provider form instead of the earlier JSON-heavy editor.
+- User-defined providers and models can be added through settings or directly from `/model`, with Anthropic-compatible or OpenAI-compatible upstream APIs.
+- External models run through a local Anthropic-compatible adapter, so the existing QueryEngine and tool loop keep working.
+- A reproducible smoke-test is included: `bun run test:model-gateway`
+
+### Quick Start
+
+```bash
+./install.sh
+claude --bare -p --model ext:kilo:kilo-auto/free "Reply with exactly: ok"
+```
+
+`./install.sh` is the one-command bootstrap after `git clone`: it installs Bun if needed, ensures `ripgrep` is present, prepares the missing local runtime stubs, builds the CLI, and installs the local `claude` wrapper to `~/.local/bin/claude`.
+
+`bun run build` now also follows the leaked-source build requirements by itself: it prepares the missing local runtime stubs, injects the required `MACRO.*` constants, and prepares the bundled `ripgrep` path under `dist/vendor/...`, so the interactive TUI no longer fails on `MACRO is not defined`, missing `rg`, or missing local runtime shims.
+
+Built-in Claude models still require a valid Anthropic login or API key. If your local Claude subscription token has expired, the TUI now surfaces the real error instead of silently doing nothing; re-authenticate with `claude auth login`.
+
+`Ctrl+O` transcript view is also fixed in this fork. The leaked build-guide sandbox stub did not implement the full violation-store API used by the TUI, so transcript toggling could crash with `store.subscribe is not a function`. The compatibility layer and bootstrap stubs now provide the required methods.
+
+### Custom Provider Settings
+
+`/model` → `Custom` now opens a compact editor that saves:
+
+- provider preset
+- model name
+- model API id
+- API key
+- context window
+- temperature
+- reasoning level
+
+Add providers in `~/.claude/settings.json` or pass them with `--settings`:
+
+```json
+{
+  "gatewayProviders": {
+    "my-openai": {
+      "type": "openai-chat",
+      "name": "My OpenAI-Compatible Provider",
+      "baseURL": "https://example.com/v1",
+      "apiKeyEnv": "MY_PROVIDER_API_KEY",
+      "timeoutMs": 120000
+    }
+  },
+  "gatewayModels": [
+    {
+      "id": "my-model",
+      "name": "My Model",
+      "provider": "my-openai",
+      "model": "provider/model-id",
+      "contextWindow": 262144,
+      "maxOutputTokens": 16384,
+      "temperature": 0.2,
+      "free": false
+    }
+  ]
+}
+```
+
+Then use:
+
+```bash
+claude --model ext:custom:my-model
+```
+
+---
+
 ## Directory Structure
 
 ```

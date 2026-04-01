@@ -45,6 +45,7 @@ export type UseTextInputProps = {
   onHistoryDown?: () => void
   onHistoryReset?: () => void
   onClearInput?: () => void
+  onTab?: (shift: boolean) => void
   focus?: boolean
   mask?: string
   multiline?: boolean
@@ -80,6 +81,7 @@ export function useTextInput({
   onHistoryDown,
   onHistoryReset,
   onClearInput,
+  onTab,
   mask = '',
   multiline = false,
   cursorChar,
@@ -369,7 +371,10 @@ export function useTextInput({
       case key.meta:
         return handleMeta
       case key.tab:
-        return () => cursor
+        return () => {
+          onTab?.(key.shift)
+          return cursor
+        }
       case key.upArrow && !key.shift:
         return upOrHistoryUp
       case key.downArrow && !key.shift:

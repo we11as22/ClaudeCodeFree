@@ -99,6 +99,7 @@ export default function TextInput(props: Props): React.ReactNode {
     onHistoryUp: props.onHistoryUp,
     onHistoryDown: props.onHistoryDown,
     onClearInput: props.onClearInput,
+    onTab: props.onTab,
     focus: props.focus,
     mask: props.mask,
     multiline: props.multiline,

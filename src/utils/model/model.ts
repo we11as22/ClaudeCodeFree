@@ -28,6 +28,7 @@ import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
 import { capitalize } from '../stringUtils.js'
+import { renderGatewayModelName } from '../../services/modelGateway/catalog.js'
 
 export type ModelShortName = string
 export type ModelName = string
@@ -393,6 +394,10 @@ function maskModelCodename(baseName: string): string {
 }
 
 export function renderModelName(model: ModelName): string {
+  const gatewayName = renderGatewayModelName(model)
+  if (gatewayName) {
+    return gatewayName
+  }
   const publicName = getPublicModelDisplayName(model)
   if (publicName) {
     return publicName
@@ -563,7 +568,10 @@ export function modelDisplayString(model: ModelSetting): string {
     return `Default (${getDefaultMainLoopModel()})`
   }
   const resolvedModel = parseUserSpecifiedModel(model)
-  return model === resolvedModel ? resolvedModel : `${model} (${resolvedModel})`
+  const renderedResolvedModel = renderModelName(resolvedModel)
+  return model === resolvedModel
+    ? renderedResolvedModel
+    : `${model} (${renderedResolvedModel})`
 }
 
 // @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.

@@ -921,6 +921,41 @@ export interface ISandboxManager {
   reset(): Promise<void>
 }
 
+type CompatibleSandboxViolationStore = SandboxViolationStore & {
+  subscribe?: (
+    listener: (violations: SandboxViolationEvent[]) => void,
+  ) => () => void
+  getTotalCount?: () => number
+}
+
+function getCompatibleSandboxViolationStore(): SandboxViolationStore {
+  const store =
+    BaseSandboxManager.getSandboxViolationStore() as CompatibleSandboxViolationStore
+  if (
+    typeof store.subscribe === 'function' &&
+    typeof store.getTotalCount === 'function'
+  ) {
+    return store
+  }
+
+  const getViolations = (): SandboxViolationEvent[] =>
+    typeof store.getViolations === 'function' ? store.getViolations() : []
+
+  return {
+    getViolations,
+    clear: () => {
+      if (typeof store.clear === 'function') {
+        store.clear()
+      }
+    },
+    subscribe: (listener: (violations: SandboxViolationEvent[]) => void) => {
+      listener(getViolations())
+      return () => {}
+    },
+    getTotalCount: () => getViolations().length,
+  } as SandboxViolationStore
+}
+
 /**
  * Claude CLI sandbox manager - wraps sandbox-runtime with Claude-specific features
  */
@@ -957,7 +992,7 @@ export const SandboxManager: ISandboxManager = {
   getLinuxHttpSocketPath: BaseSandboxManager.getLinuxHttpSocketPath,
   getLinuxSocksSocketPath: BaseSandboxManager.getLinuxSocksSocketPath,
   waitForNetworkInitialization: BaseSandboxManager.waitForNetworkInitialization,
-  getSandboxViolationStore: BaseSandboxManager.getSandboxViolationStore,
+  getSandboxViolationStore: getCompatibleSandboxViolationStore,
   annotateStderrWithSandboxFailures:
     BaseSandboxManager.annotateStderrWithSandboxFailures,
   cleanupAfterCommand: (): void => {
