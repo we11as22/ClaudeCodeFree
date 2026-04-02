@@ -15,8 +15,11 @@ import {
 } from './UI.js'
 import {
   applyPromptToMarkdown,
+  DomainBlockedError,
+  EgressBlockedError,
   type FetchedContent,
   getURLMarkdownContent,
+  getURLMarkdownContentOpencodeFallback,
   isPreapprovedUrl,
   MAX_MARKDOWN_LENGTH,
 } from './utils.js'
@@ -207,11 +210,26 @@ ${DESCRIPTION}`
   renderToolResultMessage,
   async call(
     { url, prompt },
-    { abortController, options: { isNonInteractiveSession } },
+    { abortController, options: { isNonInteractiveSession, mainLoopModel } },
   ) {
     const start = Date.now()
 
-    const response = await getURLMarkdownContent(url, abortController)
+    let response: Awaited<ReturnType<typeof getURLMarkdownContent>>
+    try {
+      response = await getURLMarkdownContent(url, abortController)
+    } catch (e) {
+      if (e instanceof DomainBlockedError || e instanceof EgressBlockedError) {
+        throw e
+      }
+      try {
+        response = await getURLMarkdownContentOpencodeFallback(
+          url,
+          abortController.signal,
+        )
+      } catch {
+        throw e
+      }
+    }
 
     // Check if we got a redirect to a different host
     if ('type' in response && response.type === 'redirect') {
@@ -274,12 +292,13 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
         abortController.signal,
         isNonInteractiveSession,
         isPreapproved,
+        mainLoopModel,
       )
     }
 
     // Binary content (PDFs, etc.) was additionally saved to disk with a
     // mime-derived extension. Note it so Claude can inspect the raw file
-    // if the Haiku summary above isn't enough.
+    // if the model-generated summary above isn't enough.
     if (persistedPath) {
       result += `\n\n[Binary content (${contentType}, ${formatFileSize(persistedSize ?? bytes)}) also saved to ${persistedPath}]`
     }

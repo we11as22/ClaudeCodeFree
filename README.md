@@ -39,6 +39,8 @@ This fork now includes a local multi-provider model gateway for using non-Anthro
 - `Free` now has a dedicated filter box above the model list, and `Custom` uses a short provider form instead of the earlier JSON-heavy editor.
 - User-defined providers and models can be added through settings or directly from `/model`, with Anthropic-compatible or OpenAI-compatible upstream APIs.
 - External models run through a local Anthropic-compatible adapter, so the existing QueryEngine and tool loop keep working.
+- `WebSearch` and `WebFetch` now also work through provider-agnostic paths instead of relying on Anthropic-only search/fetch behavior.
+- `WebSearch` uses a cascade when `webSearch.mode` is `auto` (default): **Anthropic server `web_search` first** (OpenClaude-style when supported), then **Exa MCP** (opencode-style) if native yields nothing, then **local SearXNG/DuckDuckGo** if needed. Set `webSearch.mode` to `"local"` or `WEB_SEARCH_MODE=local` for local-only.
 - A reproducible smoke-test is included: `bun run test:model-gateway`
 - The `dist/` build output is not committed (avoids huge diffs and false GitHub secret alerts on bundled third-party constants such as the VS Code OAuth client id).
 
@@ -56,6 +58,57 @@ claude --bare -p --model ext:kilo:kilo-auto/free "Reply with exactly: ok"
 Built-in Claude models still require a valid Anthropic login or API key. If your local Claude subscription token has expired, the TUI now surfaces the real error instead of silently doing nothing; re-authenticate with `claude auth login`.
 
 `Ctrl+O` transcript view is also fixed in this fork. The leaked build-guide sandbox stub did not implement the full violation-store API used by the TUI, so transcript toggling could crash with `store.subscribe is not a function`. The compatibility layer and bootstrap stubs now provide the required methods.
+
+### Web Search Provider
+
+`WebSearchTool` can use SearXNG the same way as `all_included_deep_research`. In **`auto`** mode, local search runs **after** Anthropic native search and Exa when those paths do not return hits.
+
+**WebFetch** follows **OpenClaude** by default: axios, same-host redirect policy, optional **Anthropic `domain_info` preflight** (unless `skipWebFetchPreflight`), Turndown, binary persistence, then **sideQuery** to apply your prompt. If that path fails (except explicit **domain block** or **egress allowlist** errors), an **opencode-style** `fetch` runs as fallback (Chrome `User-Agent`, Cloudflare challenge retry with `User-Agent: opencode`, `redirect: follow`, 5MB cap).
+
+Optional cascade controls:
+
+```bash
+WEB_SEARCH_MODE=local          # only SearXNG / DuckDuckGo (no Anthropic server tool, no Exa)
+WEB_SEARCH_SKIP_NATIVE=1       # skip Anthropic server web_search
+WEB_SEARCH_SKIP_EXA=1          # skip Exa MCP
+```
+
+`settings.json` → `"webSearch": { "mode": "auto" | "local", ... }`.
+
+Environment variables:
+
+```bash
+SEARCH_PROVIDER=searxng
+SEARXNG_INSTANCE_URL=http://localhost:8080
+SEARXNG_API_KEY=
+SEARXNG_MAX_RESULTS=8
+SEARXNG_LANGUAGE=en
+SEARXNG_CATEGORIES=
+SEARXNG_ENGINES=
+SEARXNG_SAFESEARCH=0
+SEARXNG_TIMEOUT_MS=30000
+```
+
+Equivalent settings:
+
+```json
+{
+  "webSearch": {
+    "provider": "searxng",
+    "searxng": {
+      "instanceURL": "http://localhost:8080",
+      "maxResults": 8,
+      "language": "en",
+      "categories": "",
+      "engines": "",
+      "safesearch": 0,
+      "timeoutMs": 30000
+    }
+  }
+}
+```
+
+If `SEARCH_PROVIDER=searxng` is set but the instance is unavailable, Claude Code falls back to the built-in direct search backend instead of failing the tool call.
 
 ### Custom Provider Settings
 

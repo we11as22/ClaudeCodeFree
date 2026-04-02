@@ -18,7 +18,12 @@ ClaudeCodeFree now supports external model providers through a local Anthropic-c
 - Compressed the `Custom` tab into a denser form layout so provider/model parameters fit without the previous oversized vertical spacing
 - Added a smoke-test script for live and mocked provider flows
 - Added Anthropic-compatible external streaming support
+- Added OpenAI-compatible external streaming support, including streamed tool-call bridging into Anthropic-style events
 - Added per-model gateway metadata for context window, max output tokens, default temperature, timeout, and streaming behavior
+- Normalized MCP/tool JSON Schema before sending it to external providers so stricter OpenAI-compatible backends receive stable object schemas
+- Reworked `WebSearchTool` to use direct outbound search retrieval with normalized result URLs instead of Anthropic's built-in `web_search_20250305` server tool
+- Added a SearXNG metasearch backend for `WebSearchTool`, matching the configuration style used in `all_included_deep_research` and falling back to the direct backend when the SearXNG instance is unavailable
+- Reworked `WebFetchTool` to use the active model layer for extraction/summarization instead of a hardwired Anthropic Haiku side-call, and removed Anthropic-specific domain preflight checks from the fetch path
 - Switched OpenCode backend selection to live `models.dev` metadata instead of model-name heuristics
 - Added source-level fallback resolution for `ext:kilo:*` and `ext:opencode:*` models when the cached catalog is stale
 - Fixed the leaked-source build so `bun run build` recreates the local runtime stubs, injects the required `MACRO.*` constants, and prepares the bundled `ripgrep` path
@@ -26,6 +31,7 @@ ClaudeCodeFree now supports external model providers through a local Anthropic-c
 - Fixed transcript toggling so `Ctrl+O` no longer crashes on incomplete sandbox-runtime stubs
 - Skipped first-party session-title generation for `ext:*` model sessions so external turns do not depend on Anthropic auth
 - Added `install.sh` so a fresh clone can be installed in one command
+- Re-enabled built-in `Explore` and `Plan` subagents for local/custom builds and made subagent type lookup case-insensitive so `explore` and `Explore` resolve to the same agent type
 
 ## Why
 
@@ -35,8 +41,9 @@ The gateway approach preserves the existing runtime while making external provid
 
 ## Operational Notes
 
-- Anthropic-compatible external providers can stream through the local gateway.
-- OpenAI-compatible external providers still use Claude Code's built-in fallback to non-streaming.
+- Anthropic-compatible and OpenAI-compatible external providers can now stream through the local gateway.
+- External tool schemas are normalized before dispatch, which reduces provider-specific JSON Schema breakage for MCP tools and strict function-calling backends.
+- `WebSearch` and `WebFetch` now execute on provider-agnostic paths, so external sessions no longer lose those tools just because the active model is not Anthropic-backed.
 - Kilo and OpenCode free-model availability can vary because upstream public quotas can rate-limit specific models.
 - Some OpenCode free models use Anthropic-compatible transport even when their ids look OpenAI-like. `minimax-m2.5-free` is one example.
 - Custom providers are configured through `gatewayProviders` and `gatewayModels`.

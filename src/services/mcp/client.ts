@@ -85,6 +85,7 @@ import {
   mcpContentNeedsTruncation,
   truncateMcpContentIfNeeded,
 } from '../../utils/mcpValidation.js'
+import { normalizeToolSchema } from '../../utils/jsonSchemaCompat.js'
 import { WebSocketTransport } from '../../utils/mcpWebSocketTransport.js'
 import { memoizeWithLRU } from '../../utils/memoize.js'
 import { getWebSocketTLSOptions } from '../../utils/mtls.js'
@@ -1810,7 +1811,9 @@ export const fetchToolsForClient = memoizeWithLRU(
             isSearchOrReadCommand() {
               return classifyMcpToolForCollapse(client.name, tool.name)
             },
-            inputJSONSchema: tool.inputSchema as Tool['inputJSONSchema'],
+            inputJSONSchema: normalizeToolSchema(
+              tool.inputSchema as Tool['inputJSONSchema'],
+            ),
             async checkPermissions() {
               return {
                 behavior: 'passthrough' as const,

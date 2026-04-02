@@ -87,6 +87,10 @@ export const HighlightedCode = memo(function HighlightedCode(t0) {
       t5 = null;
       break bb1;
     }
+    if (typeof (colorFile as { render?: unknown }).render !== 'function') {
+      t5 = null;
+      break bb1;
+    }
     let t6;
     if ($[7] !== colorFile || $[8] !== dim || $[9] !== measuredWidth || $[10] !== theme) {
       t6 = colorFile.render(theme, measuredWidth, dim);

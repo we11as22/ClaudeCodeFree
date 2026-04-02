@@ -116,7 +116,14 @@ function getInitialTab(initial: string | null, options: ModelOption[]): PickerTa
 function filterOptionsByTab(options: ModelOption[], tab: Exclude<PickerTabId, 'custom'>): ModelOption[] {
   switch (tab) {
     case 'claude':
-      return options.filter(option => !option.gateway)
+      return options.filter(
+        option =>
+          !option.gateway &&
+          !(
+            typeof option.value === 'string' &&
+            option.value.startsWith('ext:')
+          ),
+      )
     case 'free':
       return options.filter(option => option.gateway && option.isFree)
   }

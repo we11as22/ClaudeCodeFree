@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'crypto'
 import { getGatewayModelMetadata, refreshGatewayModelOptions } from './catalog.js'
 import type { GatewayBackendType } from './types.js'
+import { normalizeToolSchema } from '../../utils/jsonSchemaCompat.js'
 
 type GatewayServerState = {
   server?: ReturnType<typeof Bun.serve>
@@ -92,10 +93,43 @@ type OpenAIChatCompletionResponse = {
   }
 }
 
+type OpenAIStreamChunk = {
+  model?: string
+  choices?: Array<{
+    finish_reason?: string | null
+    delta?: {
+      content?: string | null
+      reasoning_content?: string | null
+      tool_calls?: Array<{
+        index?: number
+        id?: string
+        type?: string
+        function?: {
+          name?: string
+          arguments?: string
+        }
+      }>
+    }
+  }>
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    prompt_tokens_details?: {
+      cached_tokens?: number
+      cache_read_tokens?: number
+      cache_write_tokens?: number
+    }
+  }
+}
+
 const state: GatewayServerState = {}
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return Response.json(body, init)
+}
+
+function sseEvent(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
 function getStableOpenCodeProjectId(): string {
@@ -416,10 +450,12 @@ async function callOpenAIChatBackend(
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: tool.input_schema ?? {
-        type: 'object',
-        properties: {},
-      },
+      parameters: normalizeToolSchema(
+        tool.input_schema ?? {
+          type: 'object',
+          properties: {},
+        },
+      ),
     },
   }))
 
@@ -452,6 +488,337 @@ async function callOpenAIChatBackend(
       ...(tools && tools.length > 0 ? { tools, tool_choice: toolChoice } : {}),
     }),
     signal: getTimeoutSignal(endpoint.timeoutMs),
+  })
+}
+
+async function parseOpenAIEventStream(
+  body: ReadableStream<Uint8Array>,
+  signal: AbortSignal,
+  onEvent: (event: OpenAIStreamChunk | '[DONE]') => void,
+): Promise<void> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  const abort = () => {
+    void reader.cancel().catch(() => undefined)
+  }
+  signal.addEventListener('abort', abort)
+
+  try {
+    while (!signal.aborted) {
+      const chunk = await reader
+        .read()
+        .catch(() => ({ done: true, value: undefined as Uint8Array | undefined }))
+      if (chunk.done) {
+        break
+      }
+
+      buffer += decoder.decode(chunk.value, { stream: true })
+      buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop() ?? ''
+
+      for (const frame of frames) {
+        const dataLines = frame
+          .split('\n')
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.replace(/^data:\s*/, ''))
+        if (dataLines.length === 0) {
+          continue
+        }
+        const raw = dataLines.join('\n')
+        if (raw === '[DONE]') {
+          onEvent('[DONE]')
+          return
+        }
+        try {
+          onEvent(JSON.parse(raw) as OpenAIStreamChunk)
+        } catch {
+          continue
+        }
+      }
+    }
+  } finally {
+    signal.removeEventListener('abort', abort)
+    reader.releaseLock()
+  }
+}
+
+async function callOpenAIStreamingBackend(
+  request: AnthropicRequestBody & Record<string, unknown>,
+  endpoint: UpstreamEndpoint,
+): Promise<Response> {
+  const headers = new Headers({
+    'content-type': 'application/json',
+  })
+  if (endpoint.apiKey) {
+    headers.set('authorization', `Bearer ${endpoint.apiKey}`)
+  }
+  for (const [key, value] of Object.entries(endpoint.headers ?? {})) {
+    headers.set(key, value)
+  }
+  applySourceSpecificHeaders(headers, endpoint)
+
+  const tools = request.tools?.map(tool => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: normalizeToolSchema(
+        tool.input_schema ?? {
+          type: 'object',
+          properties: {},
+        },
+      ),
+    },
+  }))
+
+  let toolChoice: unknown
+  if (request.tool_choice?.type === 'tool') {
+    toolChoice = {
+      type: 'function',
+      function: {
+        name: request.tool_choice.name,
+      },
+    }
+  } else if (request.tool_choice?.type === 'any') {
+    toolChoice = 'required'
+  } else {
+    toolChoice = 'auto'
+  }
+
+  const signal = getTimeoutSignal(endpoint.timeoutMs)
+  const upstreamResponse = await fetch(`${endpoint.baseURL}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      ...(endpoint.body ?? {}),
+      model: request.model,
+      messages: convertAnthropicMessagesToOpenAI(request),
+      max_tokens: request.max_tokens,
+      stream: true,
+      stream_options: { include_usage: true },
+      ...(request.temperature !== undefined
+        ? { temperature: request.temperature }
+        : {}),
+      ...(tools && tools.length > 0 ? { tools, tool_choice: toolChoice } : {}),
+    }),
+    signal,
+  })
+
+  if (!upstreamResponse.ok) {
+    return new Response(await upstreamResponse.text(), {
+      status: upstreamResponse.status,
+      headers: {
+        'content-type':
+          upstreamResponse.headers.get('content-type') ?? 'application/json',
+      },
+    })
+  }
+
+  if (!upstreamResponse.body) {
+    return jsonResponse(
+      {
+        error: {
+          type: 'api_error',
+          message: 'OpenAI-compatible upstream returned no response body',
+        },
+      },
+      { status: 502 },
+    )
+  }
+
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const messageId = `msg_${randomUUID()}`
+      let sentMessageStart = false
+      let textBlockOpen = false
+      let thinkingBlockOpen = false
+      let finishReason: string | null = null
+      let usage: OpenAIStreamChunk['usage'] | undefined
+      const toolState = new Map<number, { id: string; name: string }>()
+
+      const emit = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(sseEvent(event, data)))
+      }
+
+      const ensureMessageStart = (modelName?: string) => {
+        if (sentMessageStart) {
+          return
+        }
+        sentMessageStart = true
+        emit('message_start', {
+          type: 'message_start',
+          message: {
+            id: messageId,
+            type: 'message',
+            role: 'assistant',
+            model: modelName ?? request.model,
+            content: [],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 0,
+              output_tokens: 0,
+            },
+          },
+        })
+      }
+
+      try {
+        await parseOpenAIEventStream(
+          upstreamResponse.body!,
+          signal ?? new AbortController().signal,
+          event => {
+            if (event === '[DONE]') {
+              return
+            }
+            const choice = event.choices?.[0]
+            const delta = choice?.delta
+            ensureMessageStart(event.model)
+            finishReason = mapStopReason(choice?.finish_reason) ?? finishReason
+            usage = event.usage ?? usage
+
+            const reasoningText = delta?.reasoning_content?.trim()
+            if (reasoningText) {
+              if (!thinkingBlockOpen) {
+                thinkingBlockOpen = true
+                emit('content_block_start', {
+                  type: 'content_block_start',
+                  index: 0,
+                  content_block: {
+                    type: 'thinking',
+                    thinking: '',
+                    signature: '',
+                  },
+                })
+              }
+              emit('content_block_delta', {
+                type: 'content_block_delta',
+                index: 0,
+                delta: {
+                  type: 'thinking_delta',
+                  thinking: delta?.reasoning_content ?? '',
+                },
+              })
+            }
+
+            const textIndex = thinkingBlockOpen ? 1 : 0
+            if (delta?.content) {
+              if (!textBlockOpen) {
+                textBlockOpen = true
+                emit('content_block_start', {
+                  type: 'content_block_start',
+                  index: textIndex,
+                  content_block: {
+                    type: 'text',
+                    text: '',
+                  },
+                })
+              }
+              emit('content_block_delta', {
+                type: 'content_block_delta',
+                index: textIndex,
+                delta: {
+                  type: 'text_delta',
+                  text: delta.content,
+                },
+              })
+            }
+
+            for (const toolCall of delta?.tool_calls ?? []) {
+              const toolIndex =
+                (thinkingBlockOpen ? 2 : 1) + (toolCall.index ?? 0)
+              const existing = toolState.get(toolIndex)
+              const id =
+                toolCall.id ?? existing?.id ?? `toolu_${randomUUID()}`
+              const name =
+                toolCall.function?.name ?? existing?.name ?? 'tool'
+              if (!existing) {
+                toolState.set(toolIndex, { id, name })
+                emit('content_block_start', {
+                  type: 'content_block_start',
+                  index: toolIndex,
+                  content_block: {
+                    type: 'tool_use',
+                    id,
+                    name,
+                    input: {},
+                  },
+                })
+              } else if (existing.id !== id || existing.name !== name) {
+                toolState.set(toolIndex, { id, name })
+              }
+              if (toolCall.function?.arguments) {
+                emit('content_block_delta', {
+                  type: 'content_block_delta',
+                  index: toolIndex,
+                  delta: {
+                    type: 'input_json_delta',
+                    partial_json: toolCall.function.arguments,
+                  },
+                })
+              }
+            }
+          },
+        )
+
+        if (thinkingBlockOpen) {
+          emit('content_block_stop', {
+            type: 'content_block_stop',
+            index: 0,
+          })
+        }
+        if (textBlockOpen) {
+          emit('content_block_stop', {
+            type: 'content_block_stop',
+            index: thinkingBlockOpen ? 1 : 0,
+          })
+        }
+        for (const toolIndex of [...toolState.keys()].sort((a, b) => a - b)) {
+          emit('content_block_stop', {
+            type: 'content_block_stop',
+            index: toolIndex,
+          })
+        }
+
+        ensureMessageStart(request.model)
+        emit('message_delta', {
+          type: 'message_delta',
+          delta: {
+            stop_reason: finishReason ?? 'end_turn',
+            stop_sequence: null,
+          },
+          usage: {
+            input_tokens: usage?.prompt_tokens ?? 0,
+            output_tokens: usage?.completion_tokens ?? 0,
+            cache_read_input_tokens:
+              usage?.prompt_tokens_details?.cached_tokens ??
+              usage?.prompt_tokens_details?.cache_read_tokens,
+            cache_creation_input_tokens:
+              usage?.prompt_tokens_details?.cache_write_tokens,
+          },
+        })
+        emit('message_stop', {
+          type: 'message_stop',
+        })
+        controller.close()
+      } catch (error) {
+        controller.error(error)
+      }
+    },
+  })
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    },
   })
 }
 
@@ -605,6 +972,26 @@ async function handleGatewayRequest(request: Request): Promise<Response> {
     if (metadata.backend === 'anthropic' && metadata.enableStreaming !== false) {
       const apiKey = resolveApiKey(metadata)
       return callAnthropicStreamingBackend(
+        buildUpstreamRequest(
+          {
+            ...body,
+            stream: true,
+          },
+          metadata,
+        ),
+        {
+          baseURL: metadata.baseURL,
+          apiKey,
+          headers: metadata.headers,
+          body: metadata.body,
+          timeoutMs: metadata.timeoutMs,
+          source: metadata.source,
+        },
+      )
+    }
+    if (metadata.backend === 'openai-chat' && metadata.enableStreaming !== false) {
+      const apiKey = resolveApiKey(metadata)
+      return callOpenAIStreamingBackend(
         buildUpstreamRequest(
           {
             ...body,

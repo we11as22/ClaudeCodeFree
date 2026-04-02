@@ -178,6 +178,10 @@ export function GatewayCustomModelEditor({
   }
 
   useInput((input, key) => {
+    if (key.escape) {
+      onCancel()
+      return
+    }
     if (key.tab) {
       onTab(key.shift)
       return
@@ -314,9 +318,11 @@ export function GatewayCustomModelEditor({
               onHistoryUp={() => moveFocus(-1)}
               onHistoryDown={() => moveFocus(1)}
               onTab={shift => onTab(shift)}
+              onExit={onCancel}
               focus={focused}
               showCursor={focused}
               multiline={false}
+              disableEscapeDoublePress
               placeholder={options?.placeholder}
               mask={options?.mask}
               columns={56}

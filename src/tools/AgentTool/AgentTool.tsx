@@ -193,6 +193,20 @@ import type { AgentToolProgress, ShellProgress } from '../../types/tools.js';
 // AgentTool forwards both its own progress events and shell progress
 // events from the sub-agent so the SDK receives tool_progress updates during bash/powershell runs.
 export type Progress = AgentToolProgress | ShellProgress;
+
+function resolveAgentType(
+  agents: AgentDefinition[],
+  requestedType: string,
+): AgentDefinition | undefined {
+  const exact = agents.find(agent => agent.agentType === requestedType)
+  if (exact) {
+    return exact
+  }
+
+  const requestedLower = requestedType.toLowerCase()
+  return agents.find(agent => agent.agentType.toLowerCase() === requestedLower)
+}
+
 export const AgentTool = buildTool({
   async prompt({
     agents,
@@ -283,7 +297,7 @@ export const AgentTool = buildTool({
     // Spawn is triggered when team_name is set (from param or context) and name is provided
     if (teamName && name) {
       // Set agent definition color for grouped UI display before spawning
-      const agentDef = subagent_type ? toolUseContext.options.agentDefinitions.activeAgents.find(a => a.agentType === subagent_type) : undefined;
+      const agentDef = subagent_type ? resolveAgentType(toolUseContext.options.agentDefinitions.activeAgents, subagent_type) : undefined;
       if (agentDef?.color) {
         setAgentColor(subagent_type!, agentDef.color);
       }
@@ -342,10 +356,10 @@ export const AgentTool = buildTool({
       const agents = filterDeniedAgents(
       // When allowedAgentTypes is set (from Agent(x,y) tool spec), restrict to those types
       allowedAgentTypes ? allAgents.filter(a => allowedAgentTypes.includes(a.agentType)) : allAgents, appState.toolPermissionContext, AGENT_TOOL_NAME);
-      const found = agents.find(agent => agent.agentType === effectiveType);
+      const found = resolveAgentType(agents, effectiveType);
       if (!found) {
         // Check if the agent exists but is denied by permission rules
-        const agentExistsButDenied = allAgents.find(agent => agent.agentType === effectiveType);
+        const agentExistsButDenied = resolveAgentType(allAgents, effectiveType);
         if (agentExistsButDenied) {
           const denyRule = getDenyRuleForAgent(appState.toolPermissionContext, AGENT_TOOL_NAME, effectiveType);
           throw new Error(`Agent type '${effectiveType}' has been denied by permission rule '${AGENT_TOOL_NAME}(${effectiveType})' from ${denyRule?.source ?? 'settings'}.`);

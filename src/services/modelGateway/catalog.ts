@@ -252,7 +252,7 @@ function getFallbackGatewayOptions(): ModelOption[] {
           isFree: true,
           apiKey: KILO_ANONYMOUS_API_KEY,
           contextWindow: 200_000,
-          enableStreaming: false,
+          enableStreaming: true,
         },
       ),
     createExternalOption(
@@ -302,7 +302,7 @@ async function fetchKiloGatewayOptions(): Promise<ModelOption[]> {
           displayName: model.name!,
           description: getKiloDescription(model),
           contextWindow: model.context_length,
-          enableStreaming: false,
+          enableStreaming: true,
         },
       ),
     )
@@ -378,7 +378,7 @@ async function fetchOpenCodeGatewayOptions(): Promise<ModelOption[]> {
           ),
           contextWindow,
           maxOutputTokens,
-          enableStreaming: backend === 'anthropic',
+          enableStreaming: true,
         },
       )
     })
@@ -442,7 +442,7 @@ function getCustomGatewayOptions(): ModelOption[] {
           temperature: model.temperature,
           timeoutMs: model.timeoutMs ?? provider.timeoutMs,
           enableStreaming:
-            model.enableStreaming ?? provider.enableStreaming ?? provider.type === 'anthropic',
+            model.enableStreaming ?? provider.enableStreaming ?? true,
         },
       )
     })
@@ -558,7 +558,7 @@ export function getGatewayModelMetadata(
       enableStreaming:
         customModel.enableStreaming ??
         provider.enableStreaming ??
-        (customModel.backend ?? provider.type) === 'anthropic',
+        true,
     }
   }
 
@@ -579,7 +579,7 @@ export function getGatewayModelMetadata(
         parsed.model === 'gpt-5-nano',
       apiKey: OPENCODE_PUBLIC_API_KEY,
       apiKeyEnv: 'OPENCODE_API_KEY',
-      enableStreaming: backend === 'anthropic',
+      enableStreaming: true,
     }
   }
 
@@ -595,7 +595,7 @@ export function getGatewayModelMetadata(
         ? KILO_ANONYMOUS_API_KEY
         : undefined,
       apiKeyEnv: 'KILO_API_KEY',
-      enableStreaming: false,
+      enableStreaming: true,
     }
   }
 

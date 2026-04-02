@@ -4,7 +4,6 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from '../../services/analytics/index.js'
-import { queryHaiku } from '../../services/api/claude.js'
 import { AbortError } from '../../utils/errors.js'
 import { getWebFetchUserAgent } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
@@ -13,19 +12,22 @@ import {
   persistBinaryContent,
 } from '../../utils/mcpOutputStorage.js'
 import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
-import { asSystemPrompt } from '../../utils/systemPromptType.js'
+import { sideQuery } from '../../utils/sideQuery.js'
+import { getSmallFastModel } from '../../utils/model/model.js'
+import { getAPIProvider } from '../../utils/model/providers.js'
 import { isPreapprovedHost } from './preapproved.js'
 import { makeSecondaryModelPrompt } from './prompt.js'
 
-// Custom error classes for domain blocking
-class DomainBlockedError extends Error {
+/** OpenClaude-style: domain blocked by Anthropic policy (no opencode fallback). */
+export class DomainBlockedError extends Error {
   constructor(domain: string) {
     super(`Claude Code is unable to fetch from ${domain}`)
     this.name = 'DomainBlockedError'
   }
 }
 
-class DomainCheckFailedError extends Error {
+/** OpenClaude-style: preflight to api.anthropic.com failed (opencode fallback allowed). */
+export class DomainCheckFailedError extends Error {
   constructor(domain: string) {
     super(
       `Unable to verify if domain ${domain} is safe to fetch. This may be due to network restrictions or enterprise security policies blocking claude.ai.`,
@@ -34,7 +36,7 @@ class DomainCheckFailedError extends Error {
   }
 }
 
-class EgressBlockedError extends Error {
+export class EgressBlockedError extends Error {
   constructor(public readonly domain: string) {
     super(
       JSON.stringify({
@@ -68,13 +70,9 @@ const URL_CACHE = new LRUCache<string, CacheEntry>({
   ttl: CACHE_TTL_MS,
 })
 
-// Separate cache for preflight domain checks. URL_CACHE is URL-keyed, so
-// fetching two paths on the same domain triggers two identical preflight
-// HTTP round-trips to api.anthropic.com. This hostname-keyed cache avoids
-// that. Only 'allowed' is cached — blocked/failed re-check on next attempt.
 const DOMAIN_CHECK_CACHE = new LRUCache<string, true>({
   max: 128,
-  ttl: 5 * 60 * 1000, // 5 minutes — shorter than URL_CACHE TTL
+  ttl: 5 * 60 * 1000,
 })
 
 export function clearWebFetchCache(): void {
@@ -115,8 +113,13 @@ const MAX_HTTP_CONTENT_LENGTH = 10 * 1024 * 1024
 // Prevents hanging indefinitely on slow/unresponsive servers.
 const FETCH_TIMEOUT_MS = 60_000
 
-// Timeout for the domain blocklist preflight check (10 seconds).
 const DOMAIN_CHECK_TIMEOUT_MS = 10_000
+
+// Opencode-style fallback: browser-like fetch, smaller cap, follows redirects.
+const OPENCODE_FALLBACK_UA_CHROME =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+const OPENCODE_FALLBACK_MAX_BYTES = 5 * 1024 * 1024
+const OPENCODE_FALLBACK_TIMEOUT_MS = 45_000
 
 // Cap same-host redirect hops. Without this a malicious server can return
 // a redirect loop (/a → /b → /a …) and the per-request FETCH_TIMEOUT_MS
@@ -173,9 +176,7 @@ type DomainCheckResult =
   | { status: 'blocked' }
   | { status: 'check_failed'; error: Error }
 
-export async function checkDomainBlocklist(
-  domain: string,
-): Promise<DomainCheckResult> {
+async function checkDomainBlocklist(domain: string): Promise<DomainCheckResult> {
   if (DOMAIN_CHECK_CACHE.has(domain)) {
     return { status: 'allowed' }
   }
@@ -191,7 +192,6 @@ export async function checkDomainBlocklist(
       }
       return { status: 'blocked' }
     }
-    // Non-200 status but didn't throw
     return {
       status: 'check_failed',
       error: new Error(`Domain check returned status ${response.status}`),
@@ -366,11 +366,10 @@ export async function getURLMarkdownContent(
     }
   }
 
-  let parsedUrl: URL
   let upgradedUrl = url
 
   try {
-    parsedUrl = new URL(url)
+    const parsedUrl = new URL(url)
 
     // Upgrade http to https if needed
     if (parsedUrl.protocol === 'http:') {
@@ -380,20 +379,14 @@ export async function getURLMarkdownContent(
 
     const hostname = parsedUrl.hostname
 
-    // Check if the user has opted to skip the blocklist check
-    // This is for enterprise customers with restrictive security policies
-    // that prevent outbound connections to claude.ai
     const settings = getSettings_DEPRECATED()
     if (!settings.skipWebFetchPreflight) {
       const checkResult = await checkDomainBlocklist(hostname)
-      switch (checkResult.status) {
-        case 'allowed':
-          // Continue with the fetch
-          break
-        case 'blocked':
-          throw new DomainBlockedError(hostname)
-        case 'check_failed':
-          throw new DomainCheckFailedError(hostname)
+      if (checkResult.status === 'blocked') {
+        throw new DomainBlockedError(hostname)
+      }
+      if (checkResult.status === 'check_failed') {
+        throw new DomainCheckFailedError(hostname)
       }
     }
 
@@ -404,11 +397,7 @@ export async function getURLMarkdownContent(
       })
     }
   } catch (e) {
-    if (
-      e instanceof DomainBlockedError ||
-      e instanceof DomainCheckFailedError
-    ) {
-      // Expected user-facing failures - re-throw without logging as internal error
+    if (e instanceof DomainBlockedError || e instanceof DomainCheckFailedError) {
       throw e
     }
     logError(e)
@@ -434,9 +423,9 @@ export async function getURLMarkdownContent(
 
   // Binary content: save raw bytes to disk with a proper extension so Claude
   // can inspect the file later. We still fall through to the utf-8 decode +
-  // Haiku path below — for PDFs in particular the decoded string has enough
-  // ASCII structure (/Title, text streams) that Haiku can summarize it, and
-  // the saved file is a supplement rather than a replacement.
+  // text extraction path below — for PDFs in particular the decoded string
+  // has enough ASCII structure (/Title, text streams) for a useful summary,
+  // and the saved file is a supplement rather than a replacement.
   let persistedPath: string | undefined
   let persistedSize: number | undefined
   if (isBinaryContentType(contentType)) {
@@ -481,12 +470,131 @@ export async function getURLMarkdownContent(
   return entry
 }
 
+/**
+ * Opencode-style fetch fallback: browser User-Agent, optional Cloudflare retry,
+ * `redirect: 'follow'`, 5MB cap. No Anthropic domain preflight — used only when
+ * {@link getURLMarkdownContent} fails (except hard blocks).
+ */
+export async function getURLMarkdownContentOpencodeFallback(
+  url: string,
+  signal: AbortSignal,
+): Promise<FetchedContent> {
+  if (!validateURL(url)) {
+    throw new Error('Invalid URL')
+  }
+
+  let fetchUrl = url
+  const parsedUrl = new URL(url)
+  if (parsedUrl.protocol === 'http:') {
+    parsedUrl.protocol = 'https:'
+    fetchUrl = parsedUrl.toString()
+  }
+
+  const baseHeaders: Record<string, string> = {
+    'User-Agent': OPENCODE_FALLBACK_UA_CHROME,
+    Accept:
+      'text/markdown;q=1.0, text/x-markdown;q=0.9, text/plain;q=0.8, text/html;q=0.7, */*;q=0.1',
+    'Accept-Language': 'en-US,en;q=0.9',
+  }
+
+  const fetchOnce = async (
+    headers: Record<string, string>,
+  ): Promise<Response> => {
+    const timeoutController = new AbortController()
+    const t = setTimeout(
+      () => timeoutController.abort(),
+      OPENCODE_FALLBACK_TIMEOUT_MS,
+    )
+    const merged = new AbortController()
+    const abortMerged = (): void => merged.abort()
+    if (signal.aborted || timeoutController.signal.aborted) {
+      merged.abort()
+    } else {
+      signal.addEventListener('abort', abortMerged, { once: true })
+      timeoutController.signal.addEventListener('abort', abortMerged, {
+        once: true,
+      })
+    }
+    try {
+      return await fetch(fetchUrl, {
+        signal: merged.signal,
+        headers,
+        redirect: 'follow',
+      })
+    } finally {
+      clearTimeout(t)
+      signal.removeEventListener('abort', abortMerged)
+      timeoutController.signal.removeEventListener('abort', abortMerged)
+    }
+  }
+
+  let res = await fetchOnce(baseHeaders)
+  if (res.status === 403 && res.headers.get('cf-mitigated') === 'challenge') {
+    res = await fetchOnce({ ...baseHeaders, 'User-Agent': 'opencode' })
+  }
+
+  if (!res.ok) {
+    throw new Error(`WebFetch fallback: HTTP ${res.status}`)
+  }
+
+  const contentLength = res.headers.get('content-length')
+  if (
+    contentLength &&
+    parseInt(contentLength, 10) > OPENCODE_FALLBACK_MAX_BYTES
+  ) {
+    throw new Error('WebFetch fallback: response too large')
+  }
+
+  const arrayBuffer = await res.arrayBuffer()
+  if (arrayBuffer.byteLength > OPENCODE_FALLBACK_MAX_BYTES) {
+    throw new Error('WebFetch fallback: response too large')
+  }
+
+  const rawBuffer = Buffer.from(arrayBuffer)
+  const contentType = res.headers.get('content-type') ?? ''
+
+  let persistedPath: string | undefined
+  let persistedSize: number | undefined
+  if (isBinaryContentType(contentType)) {
+    const persistId = `webfetch-fb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const presult = await persistBinaryContent(
+      rawBuffer,
+      contentType,
+      persistId,
+    )
+    if (!('error' in presult)) {
+      persistedPath = presult.filepath
+      persistedSize = presult.size
+    }
+  }
+
+  const bytes = rawBuffer.length
+  const htmlContent = rawBuffer.toString('utf-8')
+  let markdownContent: string
+  if (contentType.includes('text/html')) {
+    markdownContent = (await getTurndownService()).turndown(htmlContent)
+  } else {
+    markdownContent = htmlContent
+  }
+
+  return {
+    content: markdownContent,
+    bytes,
+    code: res.status,
+    codeText: res.statusText,
+    contentType,
+    persistedPath,
+    persistedSize,
+  }
+}
+
 export async function applyPromptToMarkdown(
   prompt: string,
   markdownContent: string,
   signal: AbortSignal,
   isNonInteractiveSession: boolean,
   isPreapprovedDomain: boolean,
+  model: string,
 ): Promise<string> {
   // Truncate content to avoid "Prompt is too long" errors from the secondary model
   const truncatedContent =
@@ -500,17 +608,22 @@ export async function applyPromptToMarkdown(
     prompt,
     isPreapprovedDomain,
   )
-  const assistantMessage = await queryHaiku({
-    systemPrompt: asSystemPrompt([]),
-    userPrompt: modelPrompt,
+  const secondaryModel =
+    getAPIProvider() === 'firstParty' ? getSmallFastModel() : model
+  const assistantMessage = await sideQuery({
+    querySource: 'web_fetch_apply',
+    model: secondaryModel,
+    messages: [
+      {
+        role: 'user',
+        content: modelPrompt,
+      },
+    ],
     signal,
-    options: {
-      querySource: 'web_fetch_apply',
-      agents: [],
-      isNonInteractiveSession,
-      hasAppendSystemPrompt: false,
-      mcpTools: [],
-    },
+    max_tokens: 2048,
+    thinking: false,
+    temperature: 0,
+    skipSystemPromptPrefix: false,
   })
 
   // We need to bubble this up, so that the tool call throws, causing us to return
@@ -519,7 +632,7 @@ export async function applyPromptToMarkdown(
     throw new AbortError()
   }
 
-  const { content } = assistantMessage.message
+  const { content } = assistantMessage
   if (content.length > 0) {
     const contentBlock = content[0]
     if ('text' in contentBlock!) {

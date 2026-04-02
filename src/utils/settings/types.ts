@@ -776,6 +776,64 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Preferred language for Claude responses and voice dictation (e.g., "japanese", "spanish")',
         ),
+      webSearch: z
+        .object({
+          mode: z
+            .enum(['auto', 'local'])
+            .optional()
+            .describe(
+              'auto: Anthropic server search first (OpenClaude-style), then Exa MCP if needed, then local SearXNG/DuckDuckGo. local: only SearXNG/DuckDuckGo.',
+            ),
+          provider: z
+            .enum(['direct', 'searxng'])
+            .optional()
+            .describe('Web search provider to use for WebSearchTool'),
+          searxng: z
+            .object({
+              instanceURL: z
+                .string()
+                .optional()
+                .describe('SearXNG instance URL such as http://localhost:8080'),
+              apiKey: z
+                .string()
+                .optional()
+                .describe('Optional SearXNG API key'),
+              maxResults: z
+                .number()
+                .int()
+                .positive()
+                .optional()
+                .describe('Maximum number of SearXNG results to keep'),
+              language: z
+                .string()
+                .optional()
+                .describe('Optional SearXNG language override'),
+              categories: z
+                .string()
+                .optional()
+                .describe('Optional SearXNG categories, comma-separated'),
+              engines: z
+                .string()
+                .optional()
+                .describe('Optional SearXNG engines, comma-separated'),
+              safesearch: z
+                .number()
+                .int()
+                .min(0)
+                .max(2)
+                .optional()
+                .describe('SearXNG safe search level'),
+              timeoutMs: z
+                .number()
+                .int()
+                .positive()
+                .optional()
+                .describe('SearXNG request timeout in milliseconds'),
+            })
+            .optional(),
+        })
+        .optional()
+        .describe('Provider-specific configuration for WebSearchTool'),
       skipWebFetchPreflight: z
         .boolean()
         .optional()
